@@ -1,0 +1,651 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Controle ESP32-C3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --ground: #101215;
+    --stage-hi: #23272e;
+    --stage-lo: #14161a;
+    --surface: #1a1d22;
+    --surface-2: #22262c;
+    --line: #2e333b;
+    --text: #eceef1;
+    --muted: #9aa2ad;
+    --accent: #f5b800;
+    --accent-ink: #1b1500;
+    --radius: 14px;
+    --display: "Chakra Petch", "Rajdhani", "Segoe UI", system-ui, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font: 400 15px/1.5 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app {
+    height: 100%;
+    box-sizing: border-box;
+    padding-inline: 16px;
+    padding-block: 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 16px;
+  }
+
+  /* ---------- palco 3D ---------- */
+  .stage {
+    position: relative;
+    min-height: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: radial-gradient(ellipse 70% 65% at 50% 42%, var(--stage-hi), var(--stage-lo));
+    border: 1px solid var(--line);
+  }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #view.is-hover { cursor: pointer; }
+  #view:active { cursor: grabbing; }
+
+  .brand {
+    position: absolute; top: 18px; left: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 2px;
+    pointer-events: none;
+  }
+  .brand h1 {
+    margin: 0;
+    font: 600 clamp(22px, 2.4vw, 30px)/1.1 var(--display);
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+  .brand h1 span { color: var(--accent); }
+  .brand p { margin: 0; color: var(--muted); font: 400 12px/1.4 var(--mono); letter-spacing: 0.04em; }
+
+  .dock {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    width: min(560px, calc(100% - 32px));
+    box-sizing: border-box;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+  }
+  .btn-primary {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 18px;
+    border: 0; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink);
+    font: 600 14px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase;
+    cursor: pointer;
+    transition: transform .15s ease, filter .15s ease;
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:active { transform: scale(.97); }
+  .btn-primary svg { width: 16px; height: 16px; }
+  .range { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .range label { display: flex; justify-content: space-between; font: 400 11px/1 var(--mono); color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+  .range output { color: var(--text); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); height: 18px; }
+  .btn-icon {
+    flex: none; width: 38px; height: 38px;
+    display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 50%;
+    background: var(--surface-2); cursor: pointer;
+  }
+  .btn-icon:hover { border-color: var(--muted); }
+  .btn-icon svg { width: 18px; height: 18px; }
+
+  .hint {
+    position: absolute; right: 20px; top: 22px;
+    margin: 0; color: var(--muted);
+    font: 400 11px/1.6 var(--mono); text-align: right; letter-spacing: 0.03em;
+    pointer-events: none;
+  }
+
+  .tip {
+    position: absolute; z-index: 3; pointer-events: none;
+    padding: 5px 10px; border-radius: 6px;
+    background: var(--text); color: var(--ground);
+    font: 500 12px/1.2 var(--body);
+    transform: translate(14px, 14px);
+    white-space: nowrap;
+  }
+
+  .loader {
+    position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; justify-items: center;
+    background: var(--stage-lo);
+    font: 400 12px/1.4 var(--mono); color: var(--muted); letter-spacing: 0.05em; text-align: center;
+    padding-inline: 16px;
+  }
+  .loader .bar { width: 220px; max-width: 100%; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .loader .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .loader.is-error { color: #ff8a7a; }
+
+  /* ---------- painel ---------- */
+  .panel {
+    min-height: 0;
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 18px 20px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow { margin: 0; font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .panel-scroll { overflow-y: auto; min-height: 0; flex: 1; }
+
+  .list { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+  .item {
+    width: 100%;
+    display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 12px;
+    padding: 12px; border: 1px solid transparent; border-radius: 10px;
+    background: none; text-align: left; cursor: pointer;
+  }
+  .item:hover { background: var(--surface-2); }
+  .item[aria-current="true"] { background: var(--surface-2); border-color: var(--accent); }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+  .item-name { font: 600 15px/1.2 var(--display); letter-spacing: 0.01em; }
+  .item-tag { font: 400 11px/1 var(--mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .detail { padding: 18px 20px 24px; display: flex; flex-direction: column; gap: 16px; border-top: 1px solid var(--line); }
+  .detail-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .detail h2 { margin: 4px 0 0; font: 600 24px/1.15 var(--display); text-wrap: balance; }
+  .detail .summary { margin: 0; color: var(--text); max-width: 62ch; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px;
+    border: 1px solid var(--line);
+    font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  }
+  .specs { margin: 0; display: grid; grid-template-columns: minmax(96px, 38%) 1fr; border-top: 1px solid var(--line); }
+  .specs dt, .specs dd { margin: 0; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .specs dt { color: var(--muted); font: 400 12px/1.45 var(--body); padding-right: 12px; }
+  .specs dd { font: 400 12.5px/1.45 var(--mono); font-variant-numeric: tabular-nums; }
+  .note { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 13px; }
+  .note b { color: var(--accent); font-weight: 600; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-ghost {
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface-2);
+    font: 500 13px/1 var(--body); cursor: pointer;
+  }
+  .btn-ghost:hover { border-color: var(--muted); }
+  .btn-ghost[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+  @media (max-width: 1180px) { .hint { display: none; } }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 1fr) auto; }
+    .panel { max-height: 46vh; }
+    .hint { display: none; }
+    .dock { gap: 10px; padding: 8px; bottom: 12px; }
+    .btn-primary { padding: 9px 12px; font-size: 13px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="app">
+  <section class="stage" aria-label="Visualização 3D do controle">
+    <canvas id="view"></canvas>
+
+    <div class="brand">
+      <h1>Controle <span>ESP32-C3</span></h1>
+      <p>Vista explodida · 5 componentes · 14 peças móveis</p>
+    </div>
+
+    <p class="hint">Arrastar: girar · Botão direito: mover<br>Rolar: zoom · Clique: ver a peça<br>Teclas: E abre/fecha · Esc limpa</p>
+
+    <div class="dock">
+      <button class="btn-primary" id="toggle" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12h5M15 12h5M7 9l-3 3 3 3M17 9l3 3-3 3"/></svg>
+        <span>Explodir vista</span>
+      </button>
+      <div class="range">
+        <label for="explode"><span>Abertura</span><output id="explodeOut" for="explode">0%</output></label>
+        <input id="explode" type="range" min="0" max="100" step="1" value="0">
+      </div>
+      <button class="btn-icon" id="reset" type="button" title="Recentralizar câmera (R)" aria-label="Recentralizar câmera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+      </button>
+    </div>
+
+    <div class="tip" id="tip" hidden></div>
+    <div class="loader" id="loader">
+      <span id="loaderText">Carregando modelo 3D…</span>
+      <div class="bar"><i id="loaderBar"></i></div>
+    </div>
+  </section>
+
+  <aside class="panel" aria-label="Componentes">
+    <div class="panel-head"><p class="eyebrow">Componentes</p></div>
+    <div class="panel-scroll">
+      <ul class="list" id="list"></ul>
+      <article class="detail" id="detail" hidden>
+        <div class="detail-top">
+          <span class="chip" id="dTag"></span>
+          <button class="btn-ghost" id="close" type="button">Fechar ficha</button>
+        </div>
+        <h2 id="dName"></h2>
+        <p class="summary" id="dSummary"></p>
+        <dl class="specs" id="dSpecs"></dl>
+        <p class="note" id="dNote" hidden></p>
+        <div class="actions">
+          <button class="btn-ghost" id="isolate" type="button" aria-pressed="false">Isolar peça</button>
+          <button class="btn-ghost" id="focus" type="button">Centralizar</button>
+        </div>
+      </article>
+    </div>
+  </aside>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------- conteúdo dos componentes ---------- */
+const COMPONENTS = {
+  esp32: {
+    name: 'ESP32-C3 SuperMini', tag: 'Microcontrolador', swatch: '#c8281e',
+    summary: 'O cérebro do controle. Lê o analógico pelo conversor ADC, processa os comandos e os envia sem fio por Bluetooth LE ou Wi-Fi. A gravação do firmware é feita direto pela porta USB-C, sem conversor serial externo.',
+    specs: [
+      ['Processador', 'ESP32-C3 · RISC-V 32 bits, 1 núcleo'],
+      ['Clock', 'até 160 MHz'],
+      ['Memória', '400 KB SRAM · 4 MB flash'],
+      ['Sem fio', 'Wi-Fi 802.11 b/g/n 2,4 GHz · Bluetooth 5 LE'],
+      ['GPIO', '13 pinos (GPIO 0–10, 20, 21)'],
+      ['ADC', '12 bits · GPIO 0–4 no ADC1'],
+      ['Interfaces', 'UART · I²C · SPI · PWM'],
+      ['Alimentação', '5 V (USB-C ou pino 5V) · lógica 3,3 V'],
+      ['Extras', 'botões BOOT e RST · LED no GPIO 8 · antena cerâmica'],
+      ['Tamanho', '22,5 × 18 mm'],
+    ],
+    note: '<b>No controle:</b> leia VRx e VRy em pinos do ADC1 (GPIO 0–4). O ADC2 conflita com o Wi-Fi.',
+  },
+  bateria: {
+    name: 'Bateria Li-Po 850 mAh', tag: 'Energia', swatch: '#c9ccd1',
+    summary: 'Célula de polímero de lítio que deixa o controle sem fio. Sob a fita amarela fica o circuito de proteção (PCM), que corta a carga e a descarga quando a tensão sai da faixa segura.',
+    specs: [
+      ['Química', 'Li-Po, 1 célula (1S)'],
+      ['Tensão nominal', '3,7 V'],
+      ['Carga máxima', '4,2 V'],
+      ['Corte', '≈ 3,0 V'],
+      ['Capacidade', '850 mAh · ≈ 3,1 Wh'],
+      ['Carga sugerida', 'até 0,5 C (≈ 425 mA)'],
+      ['Proteção', 'PCM: sobrecarga, descarga profunda, curto'],
+      ['Fios', 'vermelho (+) · preto (−)'],
+      ['Tamanho no modelo', '≈ 50 × 34 × 6 mm'],
+    ],
+    note: '<b>Atenção:</b> carregue com um carregador próprio para Li-Po (ex.: TP4056). Nunca ligue a bateria direto no 5V do USB.',
+  },
+  joystick: {
+    name: 'Analógico', tag: 'Entrada', swatch: '#0d0d0d',
+    summary: 'Joystick de polegar no estilo de controle de videogame. Dois potenciômetros medem a inclinação nos eixos X e Y, e pressionar a alavanca aciona um botão.',
+    specs: [
+      ['Tipo', 'joystick analógico de 2 eixos com botão'],
+      ['Sensores', '2 potenciômetros de 10 kΩ (X e Y)'],
+      ['Saídas', 'VRx e VRy analógicas · SW digital'],
+      ['Pinos', 'GND · +V · VRx · VRy · SW'],
+      ['Alimentação', '3,3 V a 5 V'],
+      ['Leitura no ESP32', '0 a 4095, repouso ≈ meio da escala'],
+      ['Botão', 'SW fecha com o GND ao pressionar'],
+      ['Peças no modelo', 'botão, tampa, gimbal, 2 potenciômetros, chave, suporte e PCB'],
+    ],
+    note: '<b>Dica:</b> alimente com 3,3 V para usar toda a faixa do ADC e ative o pull-up interno no pino do SW.',
+  },
+  expansao: {
+    name: 'Placa de expansão', tag: 'Conexões', swatch: '#0b7a47',
+    summary: 'Base de encaixe para o ESP32-C3 SuperMini. Leva cada pino a uma fileira de três terminais (GND, VCC e sinal), o que facilita ligar o analógico e outros módulos sem solda nem protoboard.',
+    specs: [
+      ['Compatível', 'ESP32-C3 SuperMini (2 barras fêmea verdes de 8 vias)'],
+      ['Terminais', '16 colunas G · V · S, passo 2,54 mm'],
+      ['Pinagem', 'GPIO 0–10, 20, 21 · 5V · 3V3 · G'],
+      ['Cores', 'preto GND · vermelho V · amarelo sinal'],
+      ['Energia', 'entrada VIN no conector JST branco (+ / −)'],
+      ['Regulador', 'AMS1117-3.3 (SOT-223)'],
+      ['Indicador', 'LED vermelho PWR'],
+      ['Tamanho no modelo', '≈ 37 × 23 mm'],
+    ],
+    note: '<b>No controle:</b> recebe o ESP32 e concentra as ligações dos outros componentes.',
+  },
+  carcaca: {
+    name: 'Carcaça', tag: 'Estrutura', swatch: '#f5b800',
+    summary: 'Duas metades que se fecham na linha de junção. A frente tem a abertura do analógico. A traseira acomoda a bateria e as placas.',
+    specs: [
+      ['Peças', '2 (frontal e traseira)'],
+      ['Tamanho', '≈ 105 × 50 × 37 mm'],
+      ['Origem', 'arquivo STL da montagem'],
+      ['Cor', 'amarelo'],
+    ],
+    note: null,
+  },
+};
+const ORDER = ['esp32', 'bateria', 'joystick', 'expansao', 'carcaca'];
+
+/* ---------- linha do tempo (mesma do Blender, em quadros) ---------- */
+const F0 = 15, FEND = 146, DUR = 36, LAT_S = 118, LAT_D = 16;
+const CAM_SHIFT = new THREE.Vector3(0, 0, -3.44); // centro da vista explodida
+const ZOOM_OUT = 0.45;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const EXPLODE_SECONDS = reduceMotion ? 0.5 : 2.8;
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const clamp01 = v => Math.min(1, Math.max(0, v));
+
+/* ---------- cena ---------- */
+const canvas = document.getElementById('view');
+const stage = canvas.parentElement;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 0.9;
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.4;
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 400);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 90;
+
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(14, 16, -10); scene.add(key);
+const fill = new THREE.DirectionalLight(0xdfe7ff, 0.7); fill.position.set(-16, 4, -6); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 1.3); rim.position.set(-6, 10, 18); scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x20232a, 0.25));
+
+const root = new THREE.Group();
+scene.add(root);
+
+const units = [];          // { obj, base, off, lat, start, comp }
+const meshesByComp = {};   // comp -> [mesh]
+const pickables = [];
+let fitDistance = 22;
+
+/* ---------- carregamento ---------- */
+const loaderEl = document.getElementById('loader');
+const loaderBar = document.getElementById('loaderBar');
+const loaderText = document.getElementById('loaderText');
+
+function onModel(gltf) {
+  const model = gltf.scene;
+  root.add(model);
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  model.position.sub(center);
+
+  for (const node of [...model.children]) {
+    const d = node.userData || {};
+    if (!d.comp) continue;
+    const lat = d.lat ? new THREE.Vector3(d.lat[0], d.lat[2], -d.lat[1]) : null;
+    units.push({ obj: node, base: node.position.clone(), off: new THREE.Vector3(0, 0, -d.dy), lat, start: d.start, comp: d.comp });
+    node.traverse(o => {
+      if (!o.isMesh) return;
+      o.material = o.material.clone();
+      o.userData.comp = d.comp;
+      (meshesByComp[d.comp] ||= []).push(o);
+      pickables.push(o);
+    });
+  }
+
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  fitDistance = sphere.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05;
+  resetCamera(false);
+  loaderEl.hidden = true;
+}
+
+// cópia do modelo em texto (GLB + gzip + base64) para hospedagens que não servem .glb
+const MODEL_URL = 'controle.glb.gz.b64.txt';
+const MODEL_SIZE = 9141808;
+function setProgress(f) {
+  loaderBar.style.width = (f * 100).toFixed(0) + '%';
+  loaderText.textContent = `Carregando modelo 3D… ${(f * 100).toFixed(0)}%`;
+}
+async function fetchBytes(url, sizeHint) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(url + ': HTTP ' + res.status);
+  const total = Number(res.headers.get('content-length')) || sizeHint;
+  const reader = res.body.getReader();
+  const parts = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value); got += value.length;
+    setProgress(Math.min(0.95, got / total));
+  }
+  return new Blob(parts).arrayBuffer();
+}
+async function loadModel() {
+  let glb;
+  try {
+    // site (GitHub Pages / servidor local): o GLB direto
+    glb = await fetchBytes('controle.glb', 12865320);
+  } catch {
+    // hospedagens que não servem .glb: GLB comprimido (gzip) em base64
+    const text = new TextDecoder().decode(await fetchBytes(MODEL_URL, MODEL_SIZE)).trim();
+    const bin = Uint8Array.fromBase64 ? Uint8Array.fromBase64(text) : Uint8Array.from(atob(text), c => c.charCodeAt(0));
+    glb = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  }
+  loaderText.textContent = 'Montando a cena…';
+  new GLTFLoader().parse(glb, '', onModel, onModelError);
+}
+function onModelError(err) {
+  loaderEl.classList.add('is-error');
+  loaderText.textContent = 'O modelo 3D não carregou. Recarregue a página; localmente, abra por um servidor (não direto do arquivo).';
+  console.error(err);
+}
+loadModel().catch(onModelError);
+
+/* ---------- vista explodida ---------- */
+let p = 0, pTarget = 0;
+let camP = 0; // progresso já aplicado à câmera
+const toggleBtn = document.getElementById('toggle');
+const range = document.getElementById('explode');
+const rangeOut = document.getElementById('explodeOut');
+
+function applyExplode() {
+  const f = F0 + p * (FEND - F0);
+  const el = ease(clamp01((f - LAT_S) / LAT_D));
+  for (const u of units) {
+    const e = ease(clamp01((f - u.start) / DUR));
+    u.obj.position.copy(u.base).addScaledVector(u.off, e);
+    if (u.lat) u.obj.position.addScaledVector(u.lat, el);
+  }
+  // a câmera acompanha o centro e se afasta junto, preservando o que o usuário ajustou
+  const ds = CAM_SHIFT.clone().multiplyScalar(ease(p) - ease(camP));
+  controls.target.add(ds); camera.position.add(ds);
+  const k = (1 + ZOOM_OUT * ease(p)) / (1 + ZOOM_OUT * ease(camP));
+  camera.position.sub(controls.target).multiplyScalar(k).add(controls.target);
+  camP = p;
+}
+function syncUI() {
+  const pct = Math.round(p * 100);
+  range.value = pct; rangeOut.textContent = pct + '%';
+  toggleBtn.querySelector('span').textContent = pTarget >= 0.5 ? 'Fechar vista' : 'Explodir vista';
+}
+toggleBtn.addEventListener('click', () => { pTarget = pTarget >= 0.5 ? 0 : 1; syncUI(); });
+range.addEventListener('input', () => { p = pTarget = range.value / 100; applyExplode(); syncUI(); });
+
+/* ---------- câmera ---------- */
+const tween = { active: false, t: 0, fromT: new THREE.Vector3(), toT: new THREE.Vector3(), fromP: new THREE.Vector3(), toP: new THREE.Vector3() };
+function flyTo(target, position, instant) {
+  if (instant || reduceMotion) { controls.target.copy(target); camera.position.copy(position); return; }
+  tween.fromT.copy(controls.target); tween.toT.copy(target);
+  tween.fromP.copy(camera.position); tween.toP.copy(position);
+  tween.t = 0; tween.active = true;
+}
+function resetCamera(animated = true) {
+  const target = CAM_SHIFT.clone().multiplyScalar(ease(p));
+  const dir = new THREE.Vector3(Math.cos(THREE.MathUtils.degToRad(55)), 0.32, -Math.sin(THREE.MathUtils.degToRad(55))).normalize();
+  const pos = target.clone().addScaledVector(dir, fitDistance * (1 + ZOOM_OUT * ease(p)));
+  flyTo(target, pos, !animated);
+}
+function focusComp(comp) {
+  const box = new THREE.Box3();
+  for (const m of meshesByComp[comp] || []) box.expandByObject(m);
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3());
+  const r = box.getBoundingSphere(new THREE.Sphere()).radius;
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  const dist = Math.max(r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.25, 6);
+  flyTo(c, c.clone().addScaledVector(dir, dist));
+}
+document.getElementById('reset').addEventListener('click', () => resetCamera(true));
+
+/* ---------- destaque e seleção ---------- */
+const ACCENT = new THREE.Color(0xf5b800);
+let hovered = null, selected = null, isolated = false;
+function paint() {
+  for (const [comp, list] of Object.entries(meshesByComp)) {
+    const isSel = comp === selected, isHov = comp === hovered;
+    const fade = isolated && selected && !isSel;
+    for (const m of list) {
+      const mat = m.material;
+      mat.emissive.copy(ACCENT);
+      mat.emissiveIntensity = isSel ? 0.1 : isHov ? 0.06 : 0;
+      mat.transparent = fade; mat.opacity = fade ? 0.1 : 1; mat.depthWrite = !fade;
+      mat.needsUpdate = true;
+    }
+  }
+}
+
+const listEl = document.getElementById('list');
+for (const id of ORDER) {
+  const c = COMPONENTS[id];
+  const li = document.createElement('li');
+  li.innerHTML = `<button class="item" type="button" data-comp="${id}" aria-current="false">
+      <span class="swatch" style="background:${c.swatch}"></span>
+      <span class="item-name">${c.name}</span>
+      <span class="item-tag">${c.tag}</span>
+    </button>`;
+  listEl.appendChild(li);
+}
+listEl.addEventListener('click', e => {
+  const b = e.target.closest('[data-comp]'); if (!b) return;
+  select(b.dataset.comp, true);
+});
+
+const detail = document.getElementById('detail');
+const isoBtn = document.getElementById('isolate');
+function select(comp, focus) {
+  selected = comp;
+  if (!comp) isolated = false;
+  for (const b of listEl.querySelectorAll('[data-comp]')) b.setAttribute('aria-current', String(b.dataset.comp === comp));
+  detail.hidden = !comp;
+  if (comp) {
+    const c = COMPONENTS[comp];
+    document.getElementById('dTag').innerHTML = `<span class="swatch" style="background:${c.swatch};width:9px;height:9px;border-radius:2px"></span>${c.tag}`;
+    document.getElementById('dName').textContent = c.name;
+    document.getElementById('dSummary').textContent = c.summary;
+    document.getElementById('dSpecs').innerHTML = c.specs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    const note = document.getElementById('dNote');
+    note.hidden = !c.note; note.innerHTML = c.note || '';
+    detail.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    if (focus) focusComp(comp);
+  }
+  isoBtn.setAttribute('aria-pressed', String(isolated));
+  paint();
+}
+document.getElementById('close').addEventListener('click', () => select(null));
+document.getElementById('focus').addEventListener('click', () => selected && focusComp(selected));
+isoBtn.addEventListener('click', () => { isolated = !isolated; isoBtn.setAttribute('aria-pressed', String(isolated)); paint(); });
+
+/* ---------- ponteiro: hover e clique ---------- */
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const tip = document.getElementById('tip');
+let down = null, pendingMove = null;
+
+function pick(ev) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const targets = isolated && selected ? meshesByComp[selected] : pickables;
+  const hit = ray.intersectObjects(targets, false)[0];
+  return hit ? hit.object.userData.comp : null;
+}
+canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; tip.hidden = true; });
+canvas.addEventListener('pointerup', e => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  down = null;
+  if (moved > 5) return;
+  const comp = pick(e);
+  if (comp) select(comp, false); else if (!isolated) select(null);
+});
+canvas.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && !e.buttons) pendingMove = e; });
+canvas.addEventListener('pointerleave', () => { pendingMove = null; setHover(null); });
+function setHover(comp, ev) {
+  if (comp !== hovered) { hovered = comp; canvas.classList.toggle('is-hover', !!comp); paint(); }
+  if (comp && ev) {
+    const r = stage.getBoundingClientRect();
+    tip.textContent = COMPONENTS[comp].name;
+    tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px';
+    tip.hidden = false;
+  } else tip.hidden = true;
+}
+
+addEventListener('keydown', e => {
+  if (e.target.closest('input')) return;
+  if (e.key === 'e' || e.key === 'E') toggleBtn.click();
+  else if (e.key === 'r' || e.key === 'R') resetCamera(true);
+  else if (e.key === 'Escape') select(null);
+});
+
+/* ---------- laço ---------- */
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+const clock = new THREE.Clock();
+let lastPick = 0;
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (p !== pTarget) {
+    const step = dt / EXPLODE_SECONDS;
+    p = p < pTarget ? Math.min(pTarget, p + step) : Math.max(pTarget, p - step);
+    applyExplode(); syncUI();
+  }
+  if (tween.active) {
+    tween.t = Math.min(1, tween.t + dt / 0.7);
+    const k = ease(tween.t);
+    controls.target.lerpVectors(tween.fromT, tween.toT, k);
+    camera.position.lerpVectors(tween.fromP, tween.toP, k);
+    if (tween.t >= 1) tween.active = false;
+  }
+  controls.update();
+  const now = performance.now();
+  if (pendingMove && now - lastPick > 50) { lastPick = now; const ev = pendingMove; pendingMove = null; setHover(pick(ev), ev); }
+  renderer.render(scene, camera);
+});
+</script>
