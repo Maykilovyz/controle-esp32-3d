@@ -1,7 +1,7 @@
 # Controle ESP32-C3 em 3D
 
 Visualizador 3D interativo de um controle sem fio com ESP32-C3 SuperMini: câmera livre, vista explodida e ficha técnica de cada componente.
-
+https://maykilovyz.github.io/controle-esp32-3d/
 ## Componentes
 
 | Componente | Função |
